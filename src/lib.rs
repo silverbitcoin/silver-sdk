@@ -12,10 +12,19 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
+pub mod codegen;
 pub mod transaction_builder;
 pub mod types;
 
-pub use client::{SilverClient, RpcClient, WebSocketClient};
+pub use client::{
+    ClientConfig, ClientError, ConnectionPool, Event, EventFilter, NetworkInfo,
+    RpcClient, SilverClient, TransactionResponse, TransactionStatus, WebSocketClient,
+    WebSocketConfig, Result as ClientResult,
+};
+pub use codegen::{
+    CodeGenerator, CodegenError, QuantumFunction, QuantumModule, QuantumParameter,
+    QuantumStruct, QuantumType, Result as CodegenResult,
+};
 pub use transaction_builder::{
     CallArgBuilder, TransactionBuilder, TypeTagBuilder,
 };

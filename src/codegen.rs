@@ -28,6 +28,8 @@
 //! println!("{}", rust_code);
 //! ```
 
+// Note: CallArg and TypeTag will be used when full codegen is implemented
+#[allow(unused_imports)]
 use silver_core::transaction::{CallArg, TypeTag};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -133,7 +135,8 @@ pub struct QuantumModule {
 
 /// Code generator for creating Rust bindings from Quantum modules
 pub struct CodeGenerator {
-    /// Module cache
+    /// Module cache (will be used for caching parsed modules in future)
+    #[allow(dead_code)]
     modules: HashMap<String, QuantumModule>,
 }
 

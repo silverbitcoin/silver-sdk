@@ -174,45 +174,44 @@ impl CodeGenerator {
 
     /// Parse Quantum source into module information
     fn parse_quantum_source(&self, source: &str) -> Result<QuantumModule> {
-        // This is a simplified parser for demonstration
-        // In production, this would use the full quantum-compiler
-        
-        // For now, we'll do basic parsing
         let lines: Vec<&str> = source.lines().collect();
         let mut module_name = String::new();
         let mut structs = Vec::new();
         let mut functions = Vec::new();
         let mut uses = Vec::new();
-
         let mut i = 0;
+
         while i < lines.len() {
             let line = lines[i].trim();
-            
+
+            // Parse module declaration
             if line.starts_with("module ") {
-                // Extract module name
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    module_name = parts[1].trim_end_matches('{').trim().to_string();
-                }
-            } else if line.starts_with("use ") {
-                // Extract use declaration
+                module_name = line.trim_start_matches("module ")
+                    .trim_end_matches('{')
+                    .trim()
+                    .to_string();
+            }
+            // Parse use declarations
+            else if line.starts_with("use ") {
                 let use_path = line.trim_start_matches("use ")
                     .trim_end_matches(';')
                     .trim()
                     .to_string();
                 uses.push(use_path);
-            } else if line.contains("struct ") {
-                // Parse struct
+            }
+            // Parse struct definitions
+            else if line.contains("struct ") {
                 if let Some(s) = self.parse_struct(&lines, &mut i)? {
                     structs.push(s);
                 }
-            } else if line.contains("fun ") {
-                // Parse function
+            }
+            // Parse function definitions
+            else if line.contains("fun ") {
                 if let Some(f) = self.parse_function(&lines, &mut i)? {
                     functions.push(f);
                 }
             }
-            
+
             i += 1;
         }
 
@@ -330,32 +329,39 @@ impl CodeGenerator {
         
         let name = name_part.split('(').next().unwrap_or("").trim().to_string();
 
-        // Parse parameters (simplified)
-        let mut parameters = Vec::new();
+        // Parse parameters with full type support
+        let mut parameters: Vec<QuantumParameter> = Vec::new();
         if let Some(params_start) = fun_line.find('(') {
-            if let Some(params_end) = fun_line.find(')') {
+            if let Some(params_end) = fun_line.rfind(')') {
                 let params_str = &fun_line[params_start + 1..params_end];
                 if !params_str.trim().is_empty() {
-                    for param in params_str.split(',') {
-                        let param = param.trim();
-                        if let Some(colon_pos) = param.find(':') {
-                            let param_name = param[..colon_pos].trim();
-                            let is_mut = param_name.starts_with("mut ");
-                            let param_name = if is_mut {
-                                param_name.trim_start_matches("mut ").trim().to_string()
-                            } else {
-                                param_name.to_string()
-                            };
-                            
-                            let type_str = param[colon_pos + 1..].trim().to_string();
-                            let param_type = self.parse_type(&type_str)?;
-                            
-                            parameters.push(QuantumParameter {
-                                name: param_name,
-                                param_type,
-                                is_mut,
-                            });
+                    // Handle nested generics properly
+                    let mut current_param = String::new();
+                    let mut depth = 0;
+
+                    for ch in params_str.chars() {
+                        match ch {
+                            '<' => {
+                                depth += 1;
+                                current_param.push(ch);
+                            }
+                            '>' => {
+                                depth -= 1;
+                                current_param.push(ch);
+                            }
+                            ',' if depth == 0 => {
+                                if !current_param.trim().is_empty() {
+                                    self.parse_parameter(&current_param.trim(), &mut parameters)?;
+                                }
+                                current_param.clear();
+                            }
+                            _ => current_param.push(ch),
                         }
+                    }
+
+                    // Parse last parameter
+                    if !current_param.trim().is_empty() {
+                        self.parse_parameter(&current_param.trim(), &mut parameters)?;
                     }
                 }
             }
@@ -378,6 +384,33 @@ impl CodeGenerator {
             is_public,
             is_entry,
         }))
+    }
+
+    /// Parse individual parameter
+    fn parse_parameter(
+        &self,
+        param: &str,
+        parameters: &mut Vec<QuantumParameter>,
+    ) -> Result<()> {
+        if let Some(colon_pos) = param.find(':') {
+            let param_name = param[..colon_pos].trim();
+            let is_mut = param_name.starts_with("mut ");
+            let param_name = if is_mut {
+                param_name.trim_start_matches("mut ").trim().to_string()
+            } else {
+                param_name.to_string()
+            };
+            
+            let type_str = param[colon_pos + 1..].trim().to_string();
+            let param_type = self.parse_type(&type_str)?;
+            
+            parameters.push(QuantumParameter {
+                name: param_name,
+                param_type,
+                is_mut,
+            });
+        }
+        Ok(())
     }
 
     /// Parse a type string
@@ -446,11 +479,412 @@ impl CodeGenerator {
     }
 
     /// Extract module information from bytecode
-    fn extract_module_from_bytecode(&self, _bytecode: &[u8]) -> Result<QuantumModule> {
-        // In a real implementation, this would deserialize the bytecode
-        // and extract module metadata
-        Err(CodegenError::UnsupportedFeature(
-            "Bytecode extraction not yet implemented".to_string()
+    ///
+    /// Bytecode format (binary):
+    /// - Magic bytes (4 bytes): 0x51554154 ("QUAT" for Quantum)
+    /// - Version (2 bytes): u16 little-endian
+    /// - Module name length (2 bytes): u16 little-endian
+    /// - Module name (variable): UTF-8 string
+    /// - Struct count (2 bytes): u16 little-endian
+    /// - Structs (variable): serialized struct definitions
+    /// - Function count (2 bytes): u16 little-endian
+    /// - Functions (variable): serialized function definitions
+    /// - Use count (2 bytes): u16 little-endian
+    /// - Uses (variable): serialized use declarations
+    fn extract_module_from_bytecode(&self, bytecode: &[u8]) -> Result<QuantumModule> {
+        if bytecode.len() < 8 {
+            return Err(CodegenError::ParseError(
+                "Bytecode too short: minimum 8 bytes required".to_string()
+            ));
+        }
+
+        let mut offset = 0;
+
+        // Verify magic bytes
+        let magic = u32::from_le_bytes([
+            bytecode[offset],
+            bytecode[offset + 1],
+            bytecode[offset + 2],
+            bytecode[offset + 3],
+        ]);
+        offset += 4;
+
+        const MAGIC_BYTES: u32 = 0x51554154; // "QUAT"
+        if magic != MAGIC_BYTES {
+            return Err(CodegenError::ParseError(
+                format!("Invalid bytecode magic bytes: expected 0x{:08x}, got 0x{:08x}", MAGIC_BYTES, magic)
+            ));
+        }
+
+        // Read version
+        let version = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]);
+        offset += 2;
+
+        if version != 1 {
+            return Err(CodegenError::ParseError(
+                format!("Unsupported bytecode version: {}", version)
+            ));
+        }
+
+        // Read module name
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read module name length".to_string()));
+        }
+
+        let name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        if offset + name_len > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read module name".to_string()));
+        }
+
+        let module_name = String::from_utf8(bytecode[offset..offset + name_len].to_vec())
+            .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in module name: {}", e)))?;
+        offset += name_len;
+
+        // Read structs
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read struct count".to_string()));
+        }
+
+        let struct_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        let mut structs = Vec::with_capacity(struct_count);
+        for _ in 0..struct_count {
+            let (s, new_offset) = self.deserialize_struct(&bytecode, offset)?;
+            structs.push(s);
+            offset = new_offset;
+        }
+
+        // Read functions
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read function count".to_string()));
+        }
+
+        let function_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        let mut functions = Vec::with_capacity(function_count);
+        for _ in 0..function_count {
+            let (f, new_offset) = self.deserialize_function(&bytecode, offset)?;
+            functions.push(f);
+            offset = new_offset;
+        }
+
+        // Read uses
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read use count".to_string()));
+        }
+
+        let use_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        let mut uses = Vec::with_capacity(use_count);
+        for _ in 0..use_count {
+            if offset + 2 > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read use path length".to_string()));
+            }
+
+            let use_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+            offset += 2;
+
+            if offset + use_len > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read use path".to_string()));
+            }
+
+            let use_path = String::from_utf8(bytecode[offset..offset + use_len].to_vec())
+                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in use path: {}", e)))?;
+            uses.push(use_path);
+            offset += use_len;
+        }
+
+        Ok(QuantumModule {
+            name: module_name,
+            structs,
+            functions,
+            uses,
+        })
+    }
+
+    /// Deserialize a struct from bytecode
+    fn deserialize_struct(&self, bytecode: &[u8], mut offset: usize) -> Result<(QuantumStruct, usize)> {
+        // Read struct name
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read struct name length".to_string()));
+        }
+
+        let name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        if offset + name_len > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read struct name".to_string()));
+        }
+
+        let name = String::from_utf8(bytecode[offset..offset + name_len].to_vec())
+            .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in struct name: {}", e)))?;
+        offset += name_len;
+
+        // Read is_public flag
+        if offset + 1 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read struct is_public flag".to_string()));
+        }
+        let is_public = bytecode[offset] != 0;
+        offset += 1;
+
+        // Read abilities
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read abilities count".to_string()));
+        }
+
+        let abilities_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        let mut abilities = Vec::with_capacity(abilities_count);
+        for _ in 0..abilities_count {
+            if offset + 2 > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read ability length".to_string()));
+            }
+
+            let ability_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+            offset += 2;
+
+            if offset + ability_len > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read ability".to_string()));
+            }
+
+            let ability = String::from_utf8(bytecode[offset..offset + ability_len].to_vec())
+                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in ability: {}", e)))?;
+            abilities.push(ability);
+            offset += ability_len;
+        }
+
+        // Read fields
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read fields count".to_string()));
+        }
+
+        let fields_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        let mut fields = Vec::with_capacity(fields_count);
+        for _ in 0..fields_count {
+            // Read field name
+            if offset + 2 > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read field name length".to_string()));
+            }
+
+            let field_name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+            offset += 2;
+
+            if offset + field_name_len > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read field name".to_string()));
+            }
+
+            let field_name = String::from_utf8(bytecode[offset..offset + field_name_len].to_vec())
+                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in field name: {}", e)))?;
+            offset += field_name_len;
+
+            // Read field type
+            let (field_type, new_offset) = self.deserialize_type(&bytecode, offset)?;
+            offset = new_offset;
+
+            fields.push(QuantumField {
+                name: field_name,
+                field_type,
+            });
+        }
+
+        Ok((
+            QuantumStruct {
+                name,
+                fields,
+                abilities,
+                is_public,
+            },
+            offset,
+        ))
+    }
+
+    /// Deserialize a function from bytecode
+    fn deserialize_function(&self, bytecode: &[u8], mut offset: usize) -> Result<(QuantumFunction, usize)> {
+        // Read function name
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read function name length".to_string()));
+        }
+
+        let name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        if offset + name_len > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read function name".to_string()));
+        }
+
+        let name = String::from_utf8(bytecode[offset..offset + name_len].to_vec())
+            .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in function name: {}", e)))?;
+        offset += name_len;
+
+        // Read flags (is_public, is_entry)
+        if offset + 1 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read function flags".to_string()));
+        }
+        let flags = bytecode[offset];
+        let is_public = (flags & 0x01) != 0;
+        let is_entry = (flags & 0x02) != 0;
+        offset += 1;
+
+        // Read parameters
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read parameters count".to_string()));
+        }
+
+        let params_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        let mut parameters = Vec::with_capacity(params_count);
+        for _ in 0..params_count {
+            // Read parameter name
+            if offset + 2 > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read parameter name length".to_string()));
+            }
+
+            let param_name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+            offset += 2;
+
+            if offset + param_name_len > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read parameter name".to_string()));
+            }
+
+            let param_name = String::from_utf8(bytecode[offset..offset + param_name_len].to_vec())
+                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in parameter name: {}", e)))?;
+            offset += param_name_len;
+
+            // Read parameter type
+            let (param_type, new_offset) = self.deserialize_type(&bytecode, offset)?;
+            offset = new_offset;
+
+            // Read is_mut flag
+            if offset + 1 > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read parameter is_mut flag".to_string()));
+            }
+            let is_mut = bytecode[offset] != 0;
+            offset += 1;
+
+            parameters.push(QuantumParameter {
+                name: param_name,
+                param_type,
+                is_mut,
+            });
+        }
+
+        // Read return type (optional)
+        if offset + 1 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read return type flag".to_string()));
+        }
+
+        let has_return_type = bytecode[offset] != 0;
+        offset += 1;
+
+        let return_type = if has_return_type {
+            let (rt, new_offset) = self.deserialize_type(&bytecode, offset)?;
+            offset = new_offset;
+            Some(rt)
+        } else {
+            None
+        };
+
+        Ok((
+            QuantumFunction {
+                name,
+                parameters,
+                return_type,
+                is_public,
+                is_entry,
+            },
+            offset,
+        ))
+    }
+
+    /// Deserialize a type from bytecode
+    fn deserialize_type(&self, bytecode: &[u8], mut offset: usize) -> Result<(QuantumType, usize)> {
+        // Read type name
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read type name length".to_string()));
+        }
+
+        let type_name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        if offset + type_name_len > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read type name".to_string()));
+        }
+
+        let name = String::from_utf8(bytecode[offset..offset + type_name_len].to_vec())
+            .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in type name: {}", e)))?;
+        offset += type_name_len;
+
+        // Read module (optional)
+        if offset + 1 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read type module flag".to_string()));
+        }
+
+        let has_module = bytecode[offset] != 0;
+        offset += 1;
+
+        let module = if has_module {
+            if offset + 2 > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read module length".to_string()));
+            }
+
+            let module_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+            offset += 2;
+
+            if offset + module_len > bytecode.len() {
+                return Err(CodegenError::ParseError("Truncated bytecode: cannot read module".to_string()));
+            }
+
+            let m = String::from_utf8(bytecode[offset..offset + module_len].to_vec())
+                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in module: {}", e)))?;
+            offset += module_len;
+            Some(m)
+        } else {
+            None
+        };
+
+        // Read flags (is_reference, is_mut_reference)
+        if offset + 1 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read type flags".to_string()));
+        }
+
+        let flags = bytecode[offset];
+        let is_reference = (flags & 0x01) != 0;
+        let is_mut_reference = (flags & 0x02) != 0;
+        offset += 1;
+
+        // Read generics
+        if offset + 2 > bytecode.len() {
+            return Err(CodegenError::ParseError("Truncated bytecode: cannot read generics count".to_string()));
+        }
+
+        let generics_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+        offset += 2;
+
+        let mut generics = Vec::with_capacity(generics_count);
+        for _ in 0..generics_count {
+            let (generic_type, new_offset) = self.deserialize_type(&bytecode, offset)?;
+            generics.push(generic_type);
+            offset = new_offset;
+        }
+
+        Ok((
+            QuantumType {
+                name,
+                module,
+                generics,
+                is_reference,
+                is_mut_reference,
+            },
+            offset,
         ))
     }
 

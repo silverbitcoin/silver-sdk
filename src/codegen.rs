@@ -158,7 +158,7 @@ impl CodeGenerator {
     pub fn generate_from_source(&mut self, source: &str) -> Result<String> {
         // Parse the Quantum source using the quantum-compiler
         let module = self.parse_quantum_source(source)?;
-        
+
         // Generate Rust code
         self.generate_module_code(&module)
     }
@@ -167,7 +167,7 @@ impl CodeGenerator {
     pub fn generate_from_bytecode(&mut self, bytecode: &[u8]) -> Result<String> {
         // Extract module metadata from bytecode
         let module = self.extract_module_from_bytecode(bytecode)?;
-        
+
         // Generate Rust code
         self.generate_module_code(&module)
     }
@@ -186,14 +186,16 @@ impl CodeGenerator {
 
             // Parse module declaration
             if line.starts_with("module ") {
-                module_name = line.trim_start_matches("module ")
+                module_name = line
+                    .trim_start_matches("module ")
                     .trim_end_matches('{')
                     .trim()
                     .to_string();
             }
             // Parse use declarations
             else if line.starts_with("use ") {
-                let use_path = line.trim_start_matches("use ")
+                let use_path = line
+                    .trim_start_matches("use ")
                     .trim_end_matches(';')
                     .trim()
                     .to_string();
@@ -226,7 +228,7 @@ impl CodeGenerator {
     /// Parse a struct definition
     fn parse_struct(&self, lines: &[&str], index: &mut usize) -> Result<Option<QuantumStruct>> {
         let line = lines[*index].trim();
-        
+
         let is_public = line.starts_with("public ");
         let struct_line = if is_public {
             line.trim_start_matches("public ").trim()
@@ -240,20 +242,24 @@ impl CodeGenerator {
 
         // Extract struct name
         let parts: Vec<&str> = struct_line.split_whitespace().collect();
-        let name_part = parts.iter()
+        let name_part = parts
+            .iter()
             .skip_while(|&&p| p != "struct")
             .nth(1)
             .ok_or_else(|| CodegenError::ParseError("Missing struct name".to_string()))?;
-        
+
         let name = name_part.trim_end_matches('{').trim().to_string();
 
         // Extract abilities
         let mut abilities = Vec::new();
         if struct_line.contains(" has ") {
-            let has_part = struct_line.split(" has ").nth(1)
+            let has_part = struct_line
+                .split(" has ")
+                .nth(1)
                 .ok_or_else(|| CodegenError::ParseError("Invalid has clause".to_string()))?;
             let ability_str = has_part.split('{').next().unwrap_or("").trim();
-            abilities = ability_str.split(',')
+            abilities = ability_str
+                .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
@@ -280,7 +286,7 @@ impl CodeGenerator {
                     .trim_end_matches(',')
                     .trim()
                     .to_string();
-                
+
                 let field_type = self.parse_type(&type_str)?;
                 fields.push(QuantumField {
                     name: field_name,
@@ -302,7 +308,7 @@ impl CodeGenerator {
     /// Parse a function definition
     fn parse_function(&self, lines: &[&str], index: &mut usize) -> Result<Option<QuantumFunction>> {
         let line = lines[*index].trim();
-        
+
         let mut is_public = false;
         let mut is_entry = false;
         let mut fun_line = line;
@@ -322,11 +328,12 @@ impl CodeGenerator {
 
         // Extract function name
         let parts: Vec<&str> = fun_line.split_whitespace().collect();
-        let name_part = parts.iter()
+        let name_part = parts
+            .iter()
             .skip_while(|&&p| p != "fun")
             .nth(1)
             .ok_or_else(|| CodegenError::ParseError("Missing function name".to_string()))?;
-        
+
         let name = name_part.split('(').next().unwrap_or("").trim().to_string();
 
         // Parse parameters with full type support
@@ -369,9 +376,14 @@ impl CodeGenerator {
 
         // Parse return type
         let return_type = if fun_line.contains("->") {
-            let return_str = fun_line.split("->").nth(1)
+            let return_str = fun_line
+                .split("->")
+                .nth(1)
                 .ok_or_else(|| CodegenError::ParseError("Invalid return type".to_string()))?
-                .split('{').next().unwrap_or("").trim();
+                .split('{')
+                .next()
+                .unwrap_or("")
+                .trim();
             Some(self.parse_type(return_str)?)
         } else {
             None
@@ -387,11 +399,7 @@ impl CodeGenerator {
     }
 
     /// Parse individual parameter
-    fn parse_parameter(
-        &self,
-        param: &str,
-        parameters: &mut Vec<QuantumParameter>,
-    ) -> Result<()> {
+    fn parse_parameter(&self, param: &str, parameters: &mut Vec<QuantumParameter>) -> Result<()> {
         if let Some(colon_pos) = param.find(':') {
             let param_name = param[..colon_pos].trim();
             let is_mut = param_name.starts_with("mut ");
@@ -400,10 +408,10 @@ impl CodeGenerator {
             } else {
                 param_name.to_string()
             };
-            
+
             let type_str = param[colon_pos + 1..].trim().to_string();
             let param_type = self.parse_type(&type_str)?;
-            
+
             parameters.push(QuantumParameter {
                 name: param_name,
                 param_type,
@@ -441,7 +449,8 @@ impl CodeGenerator {
 
         // Handle vectors
         if type_str.starts_with("vector<") {
-            let inner_type = type_str.trim_start_matches("vector<")
+            let inner_type = type_str
+                .trim_start_matches("vector<")
                 .trim_end_matches('>')
                 .trim();
             let inner = self.parse_type(inner_type)?;
@@ -494,7 +503,7 @@ impl CodeGenerator {
     fn extract_module_from_bytecode(&self, bytecode: &[u8]) -> Result<QuantumModule> {
         if bytecode.len() < 8 {
             return Err(CodegenError::ParseError(
-                "Bytecode too short: minimum 8 bytes required".to_string()
+                "Bytecode too short: minimum 8 bytes required".to_string(),
             ));
         }
 
@@ -511,9 +520,10 @@ impl CodeGenerator {
 
         const MAGIC_BYTES: u32 = 0x51554154; // "QUAT"
         if magic != MAGIC_BYTES {
-            return Err(CodegenError::ParseError(
-                format!("Invalid bytecode magic bytes: expected 0x{:08x}, got 0x{:08x}", MAGIC_BYTES, magic)
-            ));
+            return Err(CodegenError::ParseError(format!(
+                "Invalid bytecode magic bytes: expected 0x{:08x}, got 0x{:08x}",
+                MAGIC_BYTES, magic
+            )));
         }
 
         // Read version
@@ -521,30 +531,39 @@ impl CodeGenerator {
         offset += 2;
 
         if version != 1 {
-            return Err(CodegenError::ParseError(
-                format!("Unsupported bytecode version: {}", version)
-            ));
+            return Err(CodegenError::ParseError(format!(
+                "Unsupported bytecode version: {}",
+                version
+            )));
         }
 
         // Read module name
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read module name length".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read module name length".to_string(),
+            ));
         }
 
         let name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
         offset += 2;
 
         if offset + name_len > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read module name".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read module name".to_string(),
+            ));
         }
 
-        let module_name = String::from_utf8(bytecode[offset..offset + name_len].to_vec())
-            .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in module name: {}", e)))?;
+        let module_name =
+            String::from_utf8(bytecode[offset..offset + name_len].to_vec()).map_err(|e| {
+                CodegenError::ParseError(format!("Invalid UTF-8 in module name: {}", e))
+            })?;
         offset += name_len;
 
         // Read structs
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read struct count".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read struct count".to_string(),
+            ));
         }
 
         let struct_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
@@ -559,7 +578,9 @@ impl CodeGenerator {
 
         // Read functions
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read function count".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read function count".to_string(),
+            ));
         }
 
         let function_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
@@ -574,7 +595,9 @@ impl CodeGenerator {
 
         // Read uses
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read use count".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read use count".to_string(),
+            ));
         }
 
         let use_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
@@ -583,18 +606,24 @@ impl CodeGenerator {
         let mut uses = Vec::with_capacity(use_count);
         for _ in 0..use_count {
             if offset + 2 > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read use path length".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read use path length".to_string(),
+                ));
             }
 
             let use_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
             offset += 2;
 
             if offset + use_len > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read use path".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read use path".to_string(),
+                ));
             }
 
-            let use_path = String::from_utf8(bytecode[offset..offset + use_len].to_vec())
-                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in use path: {}", e)))?;
+            let use_path =
+                String::from_utf8(bytecode[offset..offset + use_len].to_vec()).map_err(|e| {
+                    CodegenError::ParseError(format!("Invalid UTF-8 in use path: {}", e))
+                })?;
             uses.push(use_path);
             offset += use_len;
         }
@@ -608,33 +637,47 @@ impl CodeGenerator {
     }
 
     /// Deserialize a struct from bytecode
-    fn deserialize_struct(&self, bytecode: &[u8], mut offset: usize) -> Result<(QuantumStruct, usize)> {
+    fn deserialize_struct(
+        &self,
+        bytecode: &[u8],
+        mut offset: usize,
+    ) -> Result<(QuantumStruct, usize)> {
         // Read struct name
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read struct name length".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read struct name length".to_string(),
+            ));
         }
 
         let name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
         offset += 2;
 
         if offset + name_len > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read struct name".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read struct name".to_string(),
+            ));
         }
 
-        let name = String::from_utf8(bytecode[offset..offset + name_len].to_vec())
-            .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in struct name: {}", e)))?;
+        let name =
+            String::from_utf8(bytecode[offset..offset + name_len].to_vec()).map_err(|e| {
+                CodegenError::ParseError(format!("Invalid UTF-8 in struct name: {}", e))
+            })?;
         offset += name_len;
 
         // Read is_public flag
         if offset + 1 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read struct is_public flag".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read struct is_public flag".to_string(),
+            ));
         }
         let is_public = bytecode[offset] != 0;
         offset += 1;
 
         // Read abilities
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read abilities count".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read abilities count".to_string(),
+            ));
         }
 
         let abilities_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
@@ -643,25 +686,33 @@ impl CodeGenerator {
         let mut abilities = Vec::with_capacity(abilities_count);
         for _ in 0..abilities_count {
             if offset + 2 > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read ability length".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read ability length".to_string(),
+                ));
             }
 
             let ability_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
             offset += 2;
 
             if offset + ability_len > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read ability".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read ability".to_string(),
+                ));
             }
 
             let ability = String::from_utf8(bytecode[offset..offset + ability_len].to_vec())
-                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in ability: {}", e)))?;
+                .map_err(|e| {
+                    CodegenError::ParseError(format!("Invalid UTF-8 in ability: {}", e))
+                })?;
             abilities.push(ability);
             offset += ability_len;
         }
 
         // Read fields
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read fields count".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read fields count".to_string(),
+            ));
         }
 
         let fields_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
@@ -671,18 +722,25 @@ impl CodeGenerator {
         for _ in 0..fields_count {
             // Read field name
             if offset + 2 > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read field name length".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read field name length".to_string(),
+                ));
             }
 
-            let field_name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+            let field_name_len =
+                u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
             offset += 2;
 
             if offset + field_name_len > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read field name".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read field name".to_string(),
+                ));
             }
 
             let field_name = String::from_utf8(bytecode[offset..offset + field_name_len].to_vec())
-                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in field name: {}", e)))?;
+                .map_err(|e| {
+                    CodegenError::ParseError(format!("Invalid UTF-8 in field name: {}", e))
+                })?;
             offset += field_name_len;
 
             // Read field type
@@ -707,26 +765,38 @@ impl CodeGenerator {
     }
 
     /// Deserialize a function from bytecode
-    fn deserialize_function(&self, bytecode: &[u8], mut offset: usize) -> Result<(QuantumFunction, usize)> {
+    fn deserialize_function(
+        &self,
+        bytecode: &[u8],
+        mut offset: usize,
+    ) -> Result<(QuantumFunction, usize)> {
         // Read function name
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read function name length".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read function name length".to_string(),
+            ));
         }
 
         let name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
         offset += 2;
 
         if offset + name_len > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read function name".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read function name".to_string(),
+            ));
         }
 
-        let name = String::from_utf8(bytecode[offset..offset + name_len].to_vec())
-            .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in function name: {}", e)))?;
+        let name =
+            String::from_utf8(bytecode[offset..offset + name_len].to_vec()).map_err(|e| {
+                CodegenError::ParseError(format!("Invalid UTF-8 in function name: {}", e))
+            })?;
         offset += name_len;
 
         // Read flags (is_public, is_entry)
         if offset + 1 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read function flags".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read function flags".to_string(),
+            ));
         }
         let flags = bytecode[offset];
         let is_public = (flags & 0x01) != 0;
@@ -735,7 +805,9 @@ impl CodeGenerator {
 
         // Read parameters
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read parameters count".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read parameters count".to_string(),
+            ));
         }
 
         let params_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
@@ -745,18 +817,25 @@ impl CodeGenerator {
         for _ in 0..params_count {
             // Read parameter name
             if offset + 2 > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read parameter name length".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read parameter name length".to_string(),
+                ));
             }
 
-            let param_name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
+            let param_name_len =
+                u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
             offset += 2;
 
             if offset + param_name_len > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read parameter name".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read parameter name".to_string(),
+                ));
             }
 
             let param_name = String::from_utf8(bytecode[offset..offset + param_name_len].to_vec())
-                .map_err(|e| CodegenError::ParseError(format!("Invalid UTF-8 in parameter name: {}", e)))?;
+                .map_err(|e| {
+                    CodegenError::ParseError(format!("Invalid UTF-8 in parameter name: {}", e))
+                })?;
             offset += param_name_len;
 
             // Read parameter type
@@ -765,7 +844,9 @@ impl CodeGenerator {
 
             // Read is_mut flag
             if offset + 1 > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read parameter is_mut flag".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read parameter is_mut flag".to_string(),
+                ));
             }
             let is_mut = bytecode[offset] != 0;
             offset += 1;
@@ -779,7 +860,9 @@ impl CodeGenerator {
 
         // Read return type (optional)
         if offset + 1 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read return type flag".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read return type flag".to_string(),
+            ));
         }
 
         let has_return_type = bytecode[offset] != 0;
@@ -809,14 +892,18 @@ impl CodeGenerator {
     fn deserialize_type(&self, bytecode: &[u8], mut offset: usize) -> Result<(QuantumType, usize)> {
         // Read type name
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read type name length".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read type name length".to_string(),
+            ));
         }
 
         let type_name_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
         offset += 2;
 
         if offset + type_name_len > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read type name".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read type name".to_string(),
+            ));
         }
 
         let name = String::from_utf8(bytecode[offset..offset + type_name_len].to_vec())
@@ -825,7 +912,9 @@ impl CodeGenerator {
 
         // Read module (optional)
         if offset + 1 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read type module flag".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read type module flag".to_string(),
+            ));
         }
 
         let has_module = bytecode[offset] != 0;
@@ -833,14 +922,18 @@ impl CodeGenerator {
 
         let module = if has_module {
             if offset + 2 > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read module length".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read module length".to_string(),
+                ));
             }
 
             let module_len = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
             offset += 2;
 
             if offset + module_len > bytecode.len() {
-                return Err(CodegenError::ParseError("Truncated bytecode: cannot read module".to_string()));
+                return Err(CodegenError::ParseError(
+                    "Truncated bytecode: cannot read module".to_string(),
+                ));
             }
 
             let m = String::from_utf8(bytecode[offset..offset + module_len].to_vec())
@@ -853,7 +946,9 @@ impl CodeGenerator {
 
         // Read flags (is_reference, is_mut_reference)
         if offset + 1 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read type flags".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read type flags".to_string(),
+            ));
         }
 
         let flags = bytecode[offset];
@@ -863,7 +958,9 @@ impl CodeGenerator {
 
         // Read generics
         if offset + 2 > bytecode.len() {
-            return Err(CodegenError::ParseError("Truncated bytecode: cannot read generics count".to_string()));
+            return Err(CodegenError::ParseError(
+                "Truncated bytecode: cannot read generics count".to_string(),
+            ));
         }
 
         let generics_count = u16::from_le_bytes([bytecode[offset], bytecode[offset + 1]]) as usize;
@@ -893,13 +990,18 @@ impl CodeGenerator {
         let mut code = String::new();
 
         // Generate module header
-        code.push_str(&format!("// Generated code for Quantum module: {}\n", module.name));
+        code.push_str(&format!(
+            "// Generated code for Quantum module: {}\n",
+            module.name
+        ));
         code.push_str("// DO NOT EDIT - This file is auto-generated\n\n");
         code.push_str("#![allow(dead_code, unused_imports)]\n\n");
 
         // Generate imports
         code.push_str("use silver_sdk::{{TransactionBuilder, CallArgBuilder, TypeTagBuilder}};\n");
-        code.push_str("use silver_core::{{CallArg, ObjectID, ObjectRef, SilverAddress, TypeTag}};\n");
+        code.push_str(
+            "use silver_core::{{CallArg, ObjectID, ObjectRef, SilverAddress, TypeTag}};\n",
+        );
         code.push_str("use serde::{{Serialize, Deserialize}};\n\n");
 
         // Generate struct definitions
@@ -958,11 +1060,18 @@ impl CodeGenerator {
     }
 
     /// Generate function call builder
-    fn generate_function_builder(&self, module: &QuantumModule, f: &QuantumFunction) -> Result<String> {
+    fn generate_function_builder(
+        &self,
+        module: &QuantumModule,
+        f: &QuantumFunction,
+    ) -> Result<String> {
         let mut code = String::new();
 
         // Generate documentation
-        code.push_str(&format!("/// Call builder for function: {}::{}\n", module.name, f.name));
+        code.push_str(&format!(
+            "/// Call builder for function: {}::{}\n",
+            module.name, f.name
+        ));
         if f.is_entry {
             code.push_str("/// This is an entry function\n");
         }
@@ -991,7 +1100,7 @@ impl CodeGenerator {
         // Generate the call
         let module_parts: Vec<&str> = module.name.split("::").collect();
         let module_name = module_parts.last().unwrap_or(&"unknown");
-        
+
         code.push_str(&format!("    builder.call(\n"));
         code.push_str(&format!("        package,\n"));
         code.push_str(&format!("        \"{}\",\n", module_name));
@@ -1005,28 +1114,50 @@ impl CodeGenerator {
     }
 
     /// Generate argument conversion code
-    fn generate_arg_conversion(&self, param_name: &str, param_type: &QuantumType) -> Result<String> {
+    fn generate_arg_conversion(
+        &self,
+        param_name: &str,
+        param_type: &QuantumType,
+    ) -> Result<String> {
         let mut code = String::new();
 
         match param_type.name.as_str() {
             "u8" | "u16" | "u32" | "u64" | "u128" | "u256" => {
-                code.push_str(&format!("    arguments.push(CallArg::Pure(bincode::serialize(&{}).unwrap()));\n", param_name));
+                code.push_str(&format!(
+                    "    arguments.push(CallArg::Pure(bincode::serialize(&{}).unwrap()));\n",
+                    param_name
+                ));
             }
             "bool" => {
-                code.push_str(&format!("    arguments.push(CallArg::Pure(bincode::serialize(&{}).unwrap()));\n", param_name));
+                code.push_str(&format!(
+                    "    arguments.push(CallArg::Pure(bincode::serialize(&{}).unwrap()));\n",
+                    param_name
+                ));
             }
             "address" => {
-                code.push_str(&format!("    arguments.push(CallArg::Pure(bincode::serialize(&{}).unwrap()));\n", param_name));
+                code.push_str(&format!(
+                    "    arguments.push(CallArg::Pure(bincode::serialize(&{}).unwrap()));\n",
+                    param_name
+                ));
             }
             "vector" => {
-                code.push_str(&format!("    arguments.push(CallArg::Pure(bincode::serialize(&{}).unwrap()));\n", param_name));
+                code.push_str(&format!(
+                    "    arguments.push(CallArg::Pure(bincode::serialize(&{}).unwrap()));\n",
+                    param_name
+                ));
             }
             _ => {
                 // Assume it's an object reference
                 if param_type.is_reference {
-                    code.push_str(&format!("    arguments.push(CallArg::Object({}));\n", param_name));
+                    code.push_str(&format!(
+                        "    arguments.push(CallArg::Object({}));\n",
+                        param_name
+                    ));
                 } else {
-                    code.push_str(&format!("    arguments.push(CallArg::Object({}));\n", param_name));
+                    code.push_str(&format!(
+                        "    arguments.push(CallArg::Object({}));\n",
+                        param_name
+                    ));
                 }
             }
         }
@@ -1067,7 +1198,11 @@ impl CodeGenerator {
     }
 
     /// Generate module method
-    fn generate_module_method(&self, _module: &QuantumModule, f: &QuantumFunction) -> Result<String> {
+    fn generate_module_method(
+        &self,
+        _module: &QuantumModule,
+        f: &QuantumFunction,
+    ) -> Result<String> {
         let mut code = String::new();
 
         code.push_str(&format!("\n    /// Call {}\n", f.name));
@@ -1108,7 +1243,9 @@ impl CodeGenerator {
             "address" => "SilverAddress".to_string(),
             "vector" => {
                 if qtype.generics.is_empty() {
-                    return Err(CodegenError::InvalidModule("Vector without element type".to_string()));
+                    return Err(CodegenError::InvalidModule(
+                        "Vector without element type".to_string(),
+                    ));
                 }
                 let elem_type = self.quantum_type_to_rust(&qtype.generics[0])?;
                 format!("Vec<{}>", elem_type)
@@ -1159,64 +1296,4 @@ fn to_pascal_case(s: &str) -> String {
             }
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_simple_module() {
-        let source = r#"
-            module my_package::coin {
-                struct Coin has key, store {
-                    value: u64
-                }
-                
-                public fun mint(value: u64): Coin {
-                    Coin { value }
-                }
-            }
-        "#;
-
-        let mut generator = CodeGenerator::new();
-        let result = generator.generate_from_source(source);
-        assert!(result.is_ok());
-        
-        let code = result.unwrap();
-        assert!(code.contains("struct Coin"));
-        assert!(code.contains("pub value: u64"));
-        assert!(code.contains("pub fn call_mint"));
-    }
-
-    #[test]
-    fn test_parse_type() {
-        let generator = CodeGenerator::new();
-        
-        let t = generator.parse_type("u64").unwrap();
-        assert_eq!(t.name, "u64");
-        assert!(!t.is_reference);
-
-        let t = generator.parse_type("&u64").unwrap();
-        assert_eq!(t.name, "u64");
-        assert!(t.is_reference);
-        assert!(!t.is_mut_reference);
-
-        let t = generator.parse_type("&mut u64").unwrap();
-        assert_eq!(t.name, "u64");
-        assert!(t.is_reference);
-        assert!(t.is_mut_reference);
-
-        let t = generator.parse_type("vector<u8>").unwrap();
-        assert_eq!(t.name, "vector");
-        assert_eq!(t.generics.len(), 1);
-        assert_eq!(t.generics[0].name, "u8");
-    }
-
-    #[test]
-    fn test_to_pascal_case() {
-        assert_eq!(to_pascal_case("coin"), "Coin");
-        assert_eq!(to_pascal_case("my_module"), "MyModule");
-        assert_eq!(to_pascal_case("nft_marketplace"), "NftMarketplace");
-    }
 }

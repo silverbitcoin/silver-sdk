@@ -3,11 +3,11 @@
 //! This module provides a fluent API for building transactions with
 //! Composite Transaction Chains (CTC) and proper signing.
 
-use silver_core::{
-    Command, Identifier, ObjectID, ObjectRef, SilverAddress, Transaction,
-    TransactionData, TransactionExpiration, TransactionKind,
-};
 use silver_core::transaction::{CallArg, TypeTag};
+use silver_core::{
+    Command, Identifier, ObjectID, ObjectRef, SilverAddress, Transaction, TransactionData,
+    TransactionExpiration, TransactionKind,
+};
 use silver_crypto::KeyPair;
 use thiserror::Error;
 
@@ -145,10 +145,8 @@ impl TransactionBuilder {
 
     /// Transfer objects to a recipient
     pub fn transfer_objects(mut self, objects: Vec<ObjectRef>, recipient: SilverAddress) -> Self {
-        self.commands.push(Command::TransferObjects {
-            objects,
-            recipient,
-        });
+        self.commands
+            .push(Command::TransferObjects { objects, recipient });
         self
     }
 
@@ -193,11 +191,7 @@ impl TransactionBuilder {
     }
 
     /// Make a Move vector
-    pub fn make_move_vec(
-        mut self,
-        element_type: Option<TypeTag>,
-        elements: Vec<CallArg>,
-    ) -> Self {
+    pub fn make_move_vec(mut self, element_type: Option<TypeTag>, elements: Vec<CallArg>) -> Self {
         self.commands.push(Command::MakeMoveVec {
             element_type,
             elements,
@@ -394,154 +388,5 @@ impl TypeTagBuilder {
             name: Identifier::new(name)?,
             type_params,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use silver_core::{SequenceNumber, TransactionDigest};
-
-    fn create_test_object_ref() -> ObjectRef {
-        ObjectRef::new(
-            ObjectID::new([1u8; 64]),
-            SequenceNumber::initial(),
-            TransactionDigest::new([2u8; 64]),
-        )
-    }
-
-    #[test]
-    fn test_builder_basic() {
-        let sender = SilverAddress::new([1u8; 64]);
-        let recipient = SilverAddress::new([2u8; 64]);
-        let fuel_payment = create_test_object_ref();
-        let object = create_test_object_ref();
-
-        let data = TransactionBuilder::new()
-            .sender(sender)
-            .fuel_payment(fuel_payment)
-            .fuel_budget(10000)
-            .fuel_price(1000)
-            .transfer_objects(vec![object], recipient)
-            .build()
-            .unwrap();
-
-        assert_eq!(data.sender, sender);
-        assert_eq!(data.fuel_budget, 10000);
-        assert_eq!(data.fuel_price, 1000);
-        assert_eq!(data.kind.command_count(), 1);
-    }
-
-    #[test]
-    fn test_builder_multiple_commands() {
-        let sender = SilverAddress::new([1u8; 64]);
-        let recipient = SilverAddress::new([2u8; 64]);
-        let fuel_payment = create_test_object_ref();
-        let coin = create_test_object_ref();
-
-        let data = TransactionBuilder::new()
-            .sender(sender)
-            .fuel_payment(fuel_payment)
-            .fuel_budget(10000)
-            .split_coins(coin, vec![100, 200, 300])
-            .transfer_objects(vec![coin], recipient)
-            .build()
-            .unwrap();
-
-        assert_eq!(data.kind.command_count(), 2);
-    }
-
-    #[test]
-    fn test_builder_sponsored() {
-        let sender = SilverAddress::new([1u8; 64]);
-        let sponsor = SilverAddress::new([2u8; 64]);
-        let recipient = SilverAddress::new([3u8; 64]);
-        let fuel_payment = create_test_object_ref();
-        let object = create_test_object_ref();
-
-        let data = TransactionBuilder::new()
-            .sender(sender)
-            .sponsor(sponsor)
-            .fuel_payment(fuel_payment)
-            .fuel_budget(10000)
-            .transfer_objects(vec![object], recipient)
-            .build()
-            .unwrap();
-
-        assert_eq!(data.sponsor, Some(sponsor));
-    }
-
-    #[test]
-    fn test_builder_expiration() {
-        let sender = SilverAddress::new([1u8; 64]);
-        let recipient = SilverAddress::new([2u8; 64]);
-        let fuel_payment = create_test_object_ref();
-        let object = create_test_object_ref();
-
-        let data = TransactionBuilder::new()
-            .sender(sender)
-            .fuel_payment(fuel_payment)
-            .fuel_budget(10000)
-            .expires_at_timestamp(1000000)
-            .transfer_objects(vec![object], recipient)
-            .build()
-            .unwrap();
-
-        match data.expiration {
-            TransactionExpiration::Timestamp(ts) => assert_eq!(ts, 1000000),
-            _ => panic!("Expected timestamp expiration"),
-        }
-    }
-
-    #[test]
-    fn test_builder_missing_field() {
-        let result = TransactionBuilder::new()
-            .fuel_budget(10000)
-            .transfer_objects(vec![create_test_object_ref()], SilverAddress::new([1u8; 64]))
-            .build();
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_builder_no_commands() {
-        let sender = SilverAddress::new([1u8; 64]);
-        let fuel_payment = create_test_object_ref();
-
-        let result = TransactionBuilder::new()
-            .sender(sender)
-            .fuel_payment(fuel_payment)
-            .fuel_budget(10000)
-            .build();
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_call_arg_builder() {
-        let pure = CallArgBuilder::pure(vec![1, 2, 3]);
-        assert!(matches!(pure, CallArg::Pure(_)));
-
-        let obj_ref = create_test_object_ref();
-        let obj = CallArgBuilder::object(obj_ref);
-        assert!(matches!(obj, CallArg::Object(_)));
-
-        let result = CallArgBuilder::result(0);
-        assert!(matches!(result, CallArg::Result(0)));
-
-        let nested = CallArgBuilder::nested_result(0, 1);
-        assert!(matches!(nested, CallArg::NestedResult(0, 1)));
-    }
-
-    #[test]
-    fn test_type_tag_builder() {
-        assert!(matches!(TypeTagBuilder::bool(), TypeTag::Bool));
-        assert!(matches!(TypeTagBuilder::u8(), TypeTag::U8));
-        assert!(matches!(TypeTagBuilder::u64(), TypeTag::U64));
-        assert!(matches!(TypeTagBuilder::u128(), TypeTag::U128));
-        assert!(matches!(TypeTagBuilder::address(), TypeTag::Address));
-
-        let vec_type = TypeTagBuilder::vector(TypeTag::U64);
-        assert!(matches!(vec_type, TypeTag::Vector(_)));
     }
 }

@@ -72,7 +72,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", rust_code);
 
     println!("\n=== Usage Example ===\n");
-    println!(r#"
+    println!(
+        r#"
 // Using the generated code:
 
 use silver_sdk::TransactionBuilder;
@@ -99,7 +100,8 @@ let tx = nft_module.mint(
 // Sign and submit
 let signed_tx = tx.sign(&keypair)?;
 client.submit_transaction(signed_tx).await?;
-    "#);
+    "#
+    );
 
     Ok(())
 }

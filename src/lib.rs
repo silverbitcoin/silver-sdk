@@ -18,16 +18,14 @@ pub mod types;
 
 pub use client::{
     ClientConfig, ClientError, ConnectionPool, Event, EventFilter, NetworkInfo,
-    RpcClient, SilverClient, TransactionResponse, TransactionStatus, WebSocketClient,
-    WebSocketConfig, Result as ClientResult,
+    Result as ClientResult, RpcClient, SilverClient, TransactionResponse, TransactionStatus,
+    WebSocketClient, WebSocketConfig,
 };
 pub use codegen::{
-    CodeGenerator, CodegenError, QuantumFunction, QuantumModule, QuantumParameter,
-    QuantumStruct, QuantumType, Result as CodegenResult,
+    CodeGenerator, CodegenError, QuantumFunction, QuantumModule, QuantumParameter, QuantumStruct,
+    QuantumType, Result as CodegenResult,
 };
-pub use transaction_builder::{
-    CallArgBuilder, TransactionBuilder, TypeTagBuilder,
-};
+pub use transaction_builder::{CallArgBuilder, TransactionBuilder, TypeTagBuilder};
 
 // Re-export commonly used types from transaction_builder
 pub use transaction_builder::{BuilderError, Result as BuilderResult};

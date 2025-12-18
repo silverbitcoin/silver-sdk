@@ -1,0 +1,45 @@
+[package]
+name = "silver-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rust SDK for building SilverBitcoin applications"
+
+[dependencies]
+# Core
+silver-core = { path = "../silver-core" }
+silver-crypto = { path = "../silver-crypto" }
+
+# Workspace dependencies
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }
+
+# RPC Client
+jsonrpsee = { workspace = true }
+
+# Wallet and cryptography
+k256 = "0.13"
+sha3 = "0.10"
+sha2 = "0.10"
+ripemd = "0.1"
+bech32 = "0.11"
+pbkdf2 = "0.12"
+hmac = "0.12"
+num-bigint = "0.4"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+bip39 = "2.0"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+mockall = { workspace = true }
